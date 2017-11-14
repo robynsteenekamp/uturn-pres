@@ -14,6 +14,19 @@ knitr::opts_chunk$set(echo = FALSE,warning = FALSE, error = FALSE, message = FAL
 
 ```
 
+
+```{r import, include=FALSE}
+
+library("rmarkdown")
+library("tidyverse")
+library("VennDiagram")
+library("plotly")
+library("visdat")
+library("heatmaply")
+
+```
+
+
 # Introduction
 
 # Research questions
