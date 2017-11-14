@@ -1,9 +1,6 @@
-library("rmarkdown")
 library("tidyverse")
-
 library("DT")
 library("reshape2")
-library("knitr")
 library("VennDiagram")
 library("plotly")
 library("grid")
@@ -17,9 +14,9 @@ library("doParallel")
 library("heatmaply")
 library("visdat")
 
-clientcsv<-read.csv("data/client.csv")
-instancecsv<-read.csv("data/instance.csv")
-locationcsv<-read.csv("data/location.csv")
+clientcsv<-read.csv("client.csv")
+instancecsv<-read.csv("instance.csv")
+locationcsv<-read.csv("location.csv")
 client <- clientcsv[,-1]%>%filter(!is.na(CLIENT_ID))
 instance <- instancecsv[,-1]%>%filter(!is.na(CLIENT_ID))
 location<-locationcsv[,-1]

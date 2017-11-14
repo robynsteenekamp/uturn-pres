@@ -1,36 +1,30 @@
-# Project Title
+# Presentation of results to U-turn ministries
 
-One Paragraph of project description goes here
+
 
 ## Getting Started
 
-These instructions will get you a copy of the project up and running on your local machine for development and testing purposes. See deployment for notes on how to deploy the project on a live system.
+These instructions will get you a copy of the project up and running on your local machine for development and testing purposes. 
 
 ### Prerequisites
 
-What things you need to install the software and how to install them
+Have the following installed on your machine.
 
-```
-Give examples
-```
+#### RStudio
+
+[Latest version of RStudio]
+
+#### LaTeX 
+
+LaTeX can be installed following the directions on the <LaTeX project>https://miktex.org/download page.
+
+If the installation fails, try again with the <anti virus scanner disabled during installation>https://tex.stackexchange.com/questions/69403/is-it-necessary-to-disable-virus-scanner-during-tex-live-installation-and-if-so#comment149585_69403.
+
 
 ### Installing
 
-A step by step series of examples that tell you have to get a development env running
+In RStudio type the following in the console.
 
-Say what the step will be
-
-```
-Give the example
-```
-
-And repeat
-
-```
-until finished
-```
-
-End with an example of getting some data out of the system or using it for a little demo
 
 ## Running the tests
 
@@ -52,9 +46,6 @@ Explain what these tests test and why
 Give an example
 ```
 
-## Deployment
-
-Add additional notes about how to deploy this on a live system
 
 ## Built With
 
@@ -72,9 +63,9 @@ We use [SemVer](http://semver.org/) for versioning. For the versions available, 
 
 ## Authors
 
-* **Billie Thompson** - *Initial work* - [PurpleBooth](https://github.com/PurpleBooth)
+* [Robyn Steenekamp](https://github.com/robynsteenekamp)
 
-See also the list of [contributors](https://github.com/your/project/contributors) who participated in this project.
+* See also the list of [contributors](https://github.com/robynsteenekamp/uturn/contributors) who participated in this project.
 
 ## License
 
