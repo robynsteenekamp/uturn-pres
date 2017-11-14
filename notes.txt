@@ -1,0 +1,32 @@
+imports : defines how a function in one package finds a function in another
+
+exports : The exports helps you avoid conflicts with other packages by specifying which functions are available outside of your package (internal functions are available only within your package and can’t easily be used by another package). 
+
+export minimal set of functions -> less chance of conflicts
+
+SEARCH PATH
+-loading vs attaching
+
+
+
+1. use library(x) in R scripts: error if package is not installed and terminate the script
+
+2. use requireNamespace(x, quietly = TRUE) inside a package if you want a specific action (e.g. throw an error) depending on whether or not a suggested package is installed
+
+dont use require or loadnamespace!!!
+
+in packages use depends or imports field in the DESCRIPTION
+
+Generating the namespace with roxygen2 is just like generating function documentation with roxygen2. You use roxygen2 blocks (starting with #') and tags (starting with @). The workflow is the same:
+
+Add roxygen comments to your .R files.
+
+Run devtools::document() (or press Ctrl/Cmd + Shift + D in RStudio) to convert roxygen comments to .Rd files.
+
+Look at NAMESPACE and run tests to check that the specification is correct.
+
+Rinse and repeat until the correct functions are exported.
+
+
+- 
+
