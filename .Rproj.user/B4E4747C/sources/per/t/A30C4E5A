@@ -1,0 +1,23 @@
+{
+    "collab_server" : "",
+    "contents" : "",
+    "created" : 1510658405627.000,
+    "dirty" : false,
+    "encoding" : "UTF-8",
+    "folds" : "",
+    "hash" : "2107309173",
+    "id" : "A30C4E5A",
+    "lastKnownWriteTime" : 1510658883,
+    "last_content_update" : 1510658883216,
+    "path" : "C:/Users/KimB/Desktop/uturn-pres/setup.R",
+    "project_path" : "setup.R",
+    "properties" : {
+        "cursorPosition" : "1,17",
+        "scrollLine" : "0",
+        "tempName" : "Untitled1"
+    },
+    "relative_order" : 2,
+    "source_on_save" : false,
+    "source_window" : "",
+    "type" : "r_source"
+}

@@ -1,0 +1,295 @@
+library("rmarkdown")
+library("tidyverse")
+
+library("DT")
+library("reshape2")
+library("knitr")
+library("VennDiagram")
+library("plotly")
+library("grid")
+library("randomForest")
+library("zoo")
+library("cluster")
+library("kableExtra")
+library("parallel")
+library("foreach")
+library("doParallel")
+library("heatmaply")
+library("visdat")
+
+clientcsv<-read.csv("data/client.csv")
+instancecsv<-read.csv("data/instance.csv")
+locationcsv<-read.csv("data/location.csv")
+client <- clientcsv[,-1]%>%filter(!is.na(CLIENT_ID))
+instance <- instancecsv[,-1]%>%filter(!is.na(CLIENT_ID))
+location<-locationcsv[,-1]
+
+
+#return client details with no instance entries (734)
+anti_client_full1<-na.omit(anti_join(client, instance,by="CLIENT_ID")%>%distinct(CLIENT_ID))
+#return client IDs from instance entries not in client (816)
+anti_client_full<-na.omit(anti_join(instance, client,by="CLIENT_ID")%>%distinct(CLIENT_ID))
+
+#add clients in anticlient semijoin
+#ie add client IDs from instance entries not in client (816)
+anti_client_full_v<-paste(anti_client_full$CLIENT_ID)
+client<-client%>%tibble::add_row(CLIENT_ID=anti_client_full_v)
+client_full<-semi_join(client,instance,"CLIENT_ID")
+instance_full <- instance
+
+#these clients accounted for a total of dim(anti_inst)[[1]] activities.
+anti_inst<- instance_full %>% dplyr::filter(CLIENT_ID %in% anti_client_full_v)
+
+# c1 <- client_full %>% distinct(CLIENT_ID)
+# c2 <- instance_full %>% distinct(CLIENT_ID)
+
+#reset factor levels for dplyr set operations
+client_full$CLIENT_ID <-factor(client_full$CLIENT_ID)
+instance_full$CLIENT_ID <-factor(instance_full$CLIENT_ID)
+instance_full$S1<-factor(instance_full$SP_MOTIVATION)
+instance_full$S2<-factor(instance_full$CHARITY_CLASS_1)
+instance_full$S3<-factor(instance_full$CLASS3)
+instance_full$START_DATE<-as.Date(as.character(instance_full$START_DATE),'%Y-%m-%d')
+instance_full$END_PROG_DATE<-as.Date(as.character(instance_full$END_PROG_DATE),'%Y-%m-%d')
+instance_full$START_PROG_DATE<-as.Date(as.character(instance$START_PROG_DATE),'%Y-%m-%d')
+instance_full$FA_REPORT_END_DATE<-as.Date(as.character(instance_full$FA_REPORT_END_DATE),'%Y-%m-%d')
+instance_full$START_SERV_DATE<-as.Date(as.character(instance_full$START_SERV_DATE),'%Y-%m-%d')
+
+
+#create invidivual relations for services, programs and focus area reports
+service_full <- instance_full %>% filter(SA_IND==1) %>% select(CLIENT_ID, SI_ID,START_DATE, YEAR, LOCATION, NUMBER_OF_ATTENDEES,SERVICE_PRODUCT,TOTAL_VOUCHERS_REDEEMED,NUMBER_OF_VOLUNTEERS,TOTAL_SPONSORED_VOUCHERS, TOTAL_VOUCHERS_FOR_SERV_INST,PRODUCT_NAME,S1,S2,S3)
+program_full <- instance_full %>% filter(PA_IND==1) %>% select(CLIENT_ID, PA_ID,PROGRAM_ID,PROG_NAME, YEAR, START_PROG_DATE,END_PROG_DATE,DURATION,REASON_FOR_LEAVING,DURATION_SINCE_GRADUATION)
+focus_full <- instance_full %>% filter(FA_IND==1)%>% select(CLIENT_ID, FA_ID,START_DATE,YEAR,EVALUATION_STAGE,FAITH,MONEY_MANAGEMENT,MONEY_MANAGEMENT, ADDICTION, LANGUAGE_AND_LITERACY,VOCATIONAL_SKILLS,EMPLOYMENT,HEALTH_BEHAVIOUR,ACCOMMODATION,COMMUNICATION,GOAL_SETTING,EDUCATION,HOME_AFFAIRS,FAMILY,CELL,DEBT,DRIVERS_LICENSE,SUPPORT_NETWORK,EMOTIONAL_CONTROL,LOCUS_OF_CONTROL,MOTIVATION_FOR_CHANGE,IT_LITERACY,CRIMINAL_RECORD,INST_TYPE)
+
+client_names_full <- client %>% dplyr::distinct(CLIENT_ID)
+rm(list=c("clientcsv","locationcsv","instancecsv","anti_client_full_v"))
+
+# create CUMN table
+cumn_df_full <- instance_full %>% group_by(CLIENT_ID) %>% arrange(CLIENT_ID, START_DATE) %>% dplyr::summarise(CUMN = n())
+# Last seen
+last_seen_date <- instance_full %>% group_by(CLIENT_ID) %>% dplyr::summarise(last_seen_date=max(as.Date(START_DATE,"%Y-%m-%d")))
+last_seen_full <- last_seen_date %>% dplyr::mutate(last_seen_days=as.numeric(Sys.Date()-last_seen_date))
+# First seen
+first_seen_date <- instance_full %>% group_by(CLIENT_ID) %>% arrange(CLIENT_ID, START_DATE) %>% dplyr::summarise(first_seen_date=min(as.Date(START_DATE,"%Y-%m-%d")))
+first_seen_full <- first_seen_date %>% dplyr::mutate(first_seen_days=as.numeric(Sys.Date()-first_seen_date))
+# CLIENT_INFO - 1 obs per client
+t0<- left_join(client_full,first_seen_full[,-3],by="CLIENT_ID")
+t1 <- left_join(t0,last_seen_full[,-3],by="CLIENT_ID")
+t2 <- left_join(t1,cumn_df_full,by="CLIENT_ID")
+cut_date <- as.Date("2016-12-01", "%Y-%m-%d")
+client_info_full <- t2 %>% dplyr::mutate(ACTIVE=ifelse(last_seen_date < cut_date, 0, 1),ACTIVE_PERIOD=ifelse(ACTIVE==1,(Sys.Date()-first_seen_date+1)/30,(last_seen_date-first_seen_date+1)/30), END_MONTH=ceiling(ACTIVE_PERIOD)+1)%>%select(CLIENT_ID,CUMN,ACTIVE,ACTIVE_PERIOD,END_MONTH)
+
+rm(list=c("first_seen_date","last_seen_date","t0","t1","t2"))
+
+
+#client data has now changed
+cumn_df <- cumn_df_full %>% filter(as.numeric(CUMN)>=2)
+client_names <- cumn_df$CLIENT_ID
+t1 <- cumn_df_full %>% filter(as.numeric(CUMN)<2)
+
+client_control_names <- t1$CLIENT_ID
+client_control <- client_full%>%dplyr::filter(CLIENT_ID %in% client_control_names)
+instance <- instance_full%>%dplyr::filter(CLIENT_ID %in% client_names)
+client <- client_full%>%dplyr::filter(CLIENT_ID %in% client_names)
+
+#return client details with no instance entries (734)
+anti_client<-anti_join(client, instance,by="CLIENT_ID")%>%distinct(CLIENT_ID)
+#return client IDs from activies not in client (816)
+anti_client<-na.omit(anti_join(instance, client,by="CLIENT_ID")%>%distinct(CLIENT_ID))
+
+
+# c1 <- client %>% distinct(CLIENT_ID)
+# c2 <- instance %>% distinct(CLIENT_ID)
+
+#reset factor levels for dplyr set operations
+client$CLIENT_ID <-factor(client$CLIENT_ID)
+instance$CLIENT_ID <-factor(instance$CLIENT_ID)
+instance$S1<-factor(instance$S1)
+instance$S2<-factor(instance$S2)
+instance$S3<-factor(instance$S3)
+instance$START_DATE<-as.Date(as.character(instance$START_DATE),'%Y-%m-%d')
+instance$END_PROG_DATE<-as.Date(as.character(instance$END_PROG_DATE),'%Y-%m-%d')
+instance$START_PROG_DATE<-as.Date(as.character(instance$START_PROG_DATE),'%Y-%m-%d')
+instance$FA_REPORT_END_DATE<-as.Date(as.character(instance$FA_REPORT_END_DATE),'%Y-%m-%d')
+instance$START_SERV_DATE<-as.Date(as.character(instance$START_SERV_DATE),'%Y-%m-%d')
+
+#create invidivual relations for services, programs and focus area reports
+service <- instance %>% filter(SA_IND==1) %>% select(CLIENT_ID, SI_ID,START_DATE, YEAR, LOCATION, NUMBER_OF_ATTENDEES,SERVICE_PRODUCT,TOTAL_VOUCHERS_REDEEMED,NUMBER_OF_VOLUNTEERS,TOTAL_SPONSORED_VOUCHERS, TOTAL_VOUCHERS_FOR_SERV_INST,PRODUCT_NAME,S1,S2,S3)
+program <- instance %>% filter(PA_IND==1) %>% select(CLIENT_ID, PA_ID,PROGRAM_ID,PROG_NAME, YEAR, START_PROG_DATE,END_PROG_DATE,DURATION,REASON_FOR_LEAVING,DURATION_SINCE_GRADUATION)
+focus <- instance %>% filter(FA_IND==1)%>% select(CLIENT_ID, FA_ID,START_DATE,YEAR,EVALUATION_STAGE,FAITH,MONEY_MANAGEMENT,MONEY_MANAGEMENT, ADDICTION, LANGUAGE_AND_LITERACY,VOCATIONAL_SKILLS,EMPLOYMENT,HEALTH_BEHAVIOUR,ACCOMMODATION,COMMUNICATION,GOAL_SETTING,EDUCATION,HOME_AFFAIRS,FAMILY,CELL,DEBT,DRIVERS_LICENSE,SUPPORT_NETWORK,EMOTIONAL_CONTROL,LOCUS_OF_CONTROL,MOTIVATION_FOR_CHANGE,IT_LITERACY,CRIMINAL_RECORD,INST_TYPE)
+
+rm(list=c("t1"))
+
+
+# Last seen
+last_seen_date <- instance %>% group_by(CLIENT_ID) %>% dplyr::summarise(last_seen_date=max(as.Date(START_DATE,"%Y-%m-%d")))
+last_seen <- last_seen_date %>% dplyr::mutate(last_seen_days=as.numeric(Sys.Date()-last_seen_date))
+
+# First seen
+first_seen_date <- instance %>% group_by(CLIENT_ID) %>% arrange(CLIENT_ID, START_DATE) %>% dplyr::summarise(first_seen_date=min(as.Date(START_DATE,"%Y-%m-%d")))
+first_seen <- first_seen_date %>% dplyr::mutate(first_seen_days=as.numeric(Sys.Date()-first_seen_date))
+
+# CLIENT_INFO - 1 obs per client
+t0<- left_join(client,first_seen[,-3],by="CLIENT_ID")
+t1 <- left_join(t0,last_seen[,-3],by="CLIENT_ID")
+t2 <- left_join(t1,cumn_df,by="CLIENT_ID")
+cut_date <- as.Date("2016-12-01", "%Y-%m-%d")
+client_info <- t2 %>% dplyr::mutate(ACTIVE=ifelse(last_seen_date < cut_date, 0, 1),ACTIVE_PERIOD=ifelse(ACTIVE==1,(Sys.Date()-first_seen_date+1)/30,(last_seen_date-first_seen_date+1)/30), END_MONTH=ceiling(ACTIVE_PERIOD)+1)%>%select(CLIENT_ID,AGE,RACE,GENDER,ACCOMMODATION,NATIONALITY,ACTIVE,ACTIVE_PERIOD,END_MONTH)%>%dplyr::arrange(CLIENT_ID)
+
+rm(list=c("first_seen_date","last_seen_date","t0","t1","t2"))
+
+C <- client %>% distinct(CLIENT_ID)%>%dplyr::arrange(CLIENT_ID)
+S <- service %>% distinct(CLIENT_ID)
+nS <- length(S$CLIENT_ID)
+FA <- focus %>% distinct(CLIENT_ID)
+nFA <- length(FA$CLIENT_ID)
+P <- program %>% distinct(CLIENT_ID)
+nP <- length(P$CLIENT_ID)
+
+# S FA P 
+S.FA<-dplyr::intersect(S, FA); nS.FA <- dim(S.FA)[[1]]
+S.P <- dplyr::intersect(S, P); nS.P <- dim(S.P)[[1]]
+S.FA.P<-dplyr::intersect(S.FA,P); nS.FA.P<-dim(S.FA.P)[[1]]
+FA.P <- dplyr::intersect(FA,P); nFA.P<- dim(FA.P)[[1]]
+
+Q1 = dplyr::intersect(dplyr::intersect(S,dplyr::setdiff(C,P)),dplyr::setdiff(C,FA))
+Q2 = dplyr::intersect(P,dplyr::setdiff(C,FA))
+Q3 = dplyr::intersect(FA,dplyr::setdiff(C,P))
+Q4 = dplyr::intersect(FA,P)
+
+#Code to show that Qi does form a partition of C1
+Ctest = dplyr::union(dplyr::union(Q1,Q2),dplyr::union(Q3,Q4))
+Ctest = Ctest$CLIENT_ID[order(Ctest$CLIENT_ID)]; C=C$CLIENT_ID[order(C$CLIENT_ID)]
+#all(Ctest==C)
+
+#update client info
+client_info <- client_info %>% dplyr::mutate(C1=ifelse(CLIENT_ID %in% Q1$CLIENT_ID, 1, ifelse(CLIENT_ID %in% Q2$CLIENT_ID,2, ifelse(CLIENT_ID %in% Q3$CLIENT_ID, 3, ifelse(CLIENT_ID %in% Q3$CLIENT_ID, 4, ifelse(CLIENT_ID %in% Q4$CLIENT_ID, 4,NA))))))
+
+rm(list=c("Ctest","C","Q1","Q2","Q3","Q4"))
+
+s0<- left_join(service,first_seen[,-3],by="CLIENT_ID")
+
+s1 <- s0 %>% group_by(CLIENT_ID) %>% dplyr::arrange(CLIENT_ID,START_DATE)%>% dplyr::mutate(curr=ymd(START_DATE),prev=curr %m-% months(1),nxt=curr %m+% months(1),lg=lag(curr), ld=lead(curr))
+
+s2<-s1 %>% dplyr::mutate(S3=ifelse(curr<=(first_seen_date%m+%months(1)),"NEW",ifelse(prev<=lg,"RETURNING","REACTIVATED")))
+
+s2$S3<-factor(s2$S3)
+
+#service information - longitudinal
+s3 <- s2 %>% group_by(CLIENT_ID) %>% dplyr::arrange(CLIENT_ID, START_DATE)%>% dplyr::mutate(I = 1, CUM_SERV=cumsum(I),T1 = as.Date(START_DATE,"%Y-%m-%d")-lag(as.Date(START_DATE,"%Y-%m-%d")))
+
+s3$T1[is.na(s3$T1)] <- 0
+
+#t2 = cumulative days since first seen
+s4 <- s3 %>%dplyr::mutate(T2=cumsum(as.numeric(T1)))
+
+s5 <- s4 %>% dplyr::select(CLIENT_ID,SI_ID,START_DATE,PRODUCT_NAME,CUM_SERV,T1,T2,S1,S2,S3)
+
+#days inactive and active
+s6 <- s5 %>% dplyr::mutate(T_INACT=ifelse(S3=="REACTIVATED",T1,0),T_ACT=ifelse(S3=="RETURNING",T1,0))
+
+#create dummy variables for S1, S2, S3
+
+s7 <- s6  %>% dplyr::mutate(S1_DUMMY_1=ifelse(S1=="Needs-based",1,0),S1_DUMMY_2=ifelse(S1=="Volition-based",1,0),S1_DUMMY_3=ifelse(S1=="Rehabilitative",1,0),S2_DUMMY_1=ifelse(S2==1,1,0),S2_DUMMY_2=ifelse(S2==2,1,0),S2_DUMMY_3=ifelse(S2==3,1,0),S2_DUMMY_4=ifelse(S2==4,1,0),S3_DUMMY_1=ifelse(S3=="NEW",1,0),S3_DUMMY_2=ifelse(S3=="RETURNING",1,0),S3_DUMMY_3=ifelse(S3=="REACTIVATED",1,0))
+
+#time series by month
+seq_month <- seq(from=0, to=110, by=1)
+
+service_info_stack <- s7 %>% dplyr::mutate(T_MONTHS=findInterval(T2/30, seq_month))
+
+rm(list=c("s0","s1","s2","s3","s4","s5","s6","s7"))
+
+MOT1 <- dcast(service_info_stack, CLIENT_ID ~ T_MONTHS, value.var="S1_DUMMY_1",sum)%>%arrange(CLIENT_ID)
+MOT1_C <- MOT1
+MOT1_C[,2:ncol(MOT1_C)] <- t(apply(MOT1_C[,2:ncol(MOT1_C)],1,cumsum))
+
+MOT2 <- dcast(service_info_stack, CLIENT_ID ~ T_MONTHS, value.var="S1_DUMMY_2",sum)%>%arrange(CLIENT_ID)
+MOT2_C <- MOT2
+MOT2_C[,2:ncol(MOT2_C)] <- t(apply(MOT2_C[,2:ncol(MOT2_C)],1,cumsum))
+
+MOT3 <- dcast(service_info_stack, CLIENT_ID ~ T_MONTHS, value.var="S1_DUMMY_3",sum)%>%arrange(CLIENT_ID)
+MOT3_C <- MOT3
+MOT3_C[,2:ncol(MOT3_C)] <- t(apply(MOT3_C[,2:ncol(MOT3_C)],1,cumsum))
+
+PH1 <- dcast(service_info_stack, CLIENT_ID ~ T_MONTHS,sum, value.var="S2_DUMMY_1")%>%arrange(CLIENT_ID)
+PH1_C <- PH1
+PH1_C[,2:ncol(PH1_C)] <- t(apply(PH1_C[,2:ncol(PH1_C)],1,cumsum))
+
+PH2 <- dcast(service_info_stack, CLIENT_ID ~ T_MONTHS,sum, value.var="S2_DUMMY_2")%>%arrange(CLIENT_ID)
+PH2_C <- PH2
+PH2_C[,2:ncol(PH2_C)] <- t(apply(PH2_C[,2:ncol(PH2_C)],1,cumsum))
+
+PH3 <- dcast(service_info_stack, CLIENT_ID ~ T_MONTHS,sum, value.var="S2_DUMMY_3")%>%arrange(CLIENT_ID)
+PH3_C <- PH3
+PH3_C[,2:ncol(PH3_C)] <- t(apply(PH3_C[,2:ncol(PH3_C)],1,cumsum))
+
+PH4 <- dcast(service_info_stack, CLIENT_ID ~ T_MONTHS,sum, value.var="S2_DUMMY_4")%>%arrange(CLIENT_ID)
+PH4_C <- PH4
+PH4_C[,2:ncol(PH4_C)] <- t(apply(PH4_C[,2:ncol(PH4_C)],1,cumsum))
+
+C_CUMN <- dcast(service_info_stack, CLIENT_ID ~ T_MONTHS, value.var="CUM_SERV",sum)%>%arrange(CLIENT_ID)
+
+NEW <- dcast(service_info_stack, CLIENT_ID ~ T_MONTHS, value.var="S3_DUMMY_1",sum)%>%arrange(CLIENT_ID)
+NEW_C <- NEW
+NEW_C[,2:ncol(NEW_C)] <- t(apply(NEW_C[,2:ncol(NEW_C)],1,cumsum))
+
+RET <- dcast(service_info_stack, CLIENT_ID ~ T_MONTHS, value.var="S3_DUMMY_2",sum)%>%arrange(CLIENT_ID)
+RET_C <- RET
+RET_C[,2:ncol(RET_C)] <- t(apply(RET_C[,2:ncol(RET_C)],1,cumsum))
+
+REACT <- dcast(service_info_stack, CLIENT_ID ~ T_MONTHS, value.var="S3_DUMMY_3",sum)%>%arrange(CLIENT_ID)
+REACT_C <- REACT
+REACT_C[,2:ncol(REACT_C)] <- t(apply(REACT_C[,2:ncol(REACT_C)],1,cumsum))
+
+INACT <- dcast(service_info_stack, CLIENT_ID ~ T_MONTHS, value.var="T_INACT",sum)%>%arrange(CLIENT_ID)
+INACT_C <- INACT
+INACT_C[,2:ncol(INACT_C)] <- t(apply(INACT_C[,2:ncol(INACT_C)],1,cumsum))
+
+ACT <- dcast(service_info_stack, CLIENT_ID ~ T_MONTHS, value.var="T_ACT",sum)%>%arrange(CLIENT_ID)
+ACT_C <- ACT
+ACT_C[,2:ncol(ACT_C)] <- t(apply(ACT_C[,2:ncol(ACT_C)],1,cumsum))
+
+
+
+
+temp <- client_info%>%dplyr::mutate(END_MONTH=ifelse(END_MONTH>98,98,END_MONTH))%>%dplyr::arrange(CLIENT_ID)
+
+
+cl <- makeCluster(3)
+registerDoParallel(cl)
+
+
+zz <- foreach(c_name = temp$CLIENT_ID,.combine=rbind,.packages=c("dplyr")) %dopar%{
+  temp2 <- temp %>% filter(CLIENT_ID==c_name) 
+  ind_vec <- seq(from=temp2$END_MONTH,to=99)
+  i<-which(client_info$CLIENT_ID == c_name)
+  MOT1[i,ind_vec] <- NA
+  MOT2[i,ind_vec] <- NA
+  MOT3[i,ind_vec] <- NA
+  PH1[i,ind_vec] <- NA
+  PH2[i,ind_vec] <- NA
+  PH3[i,ind_vec] <- NA
+  PH4[i,ind_vec] <- NA
+  C_CUMN[i,ind_vec] <- NA
+  INACT[i,ind_vec] <- NA
+  ACT[i,ind_vec] <- NA
+  REACT[i,ind_vec] <- NA
+  RET[i,ind_vec] <- NA
+  NEW[i,ind_vec] <- NA
+  MOT1_C[i,ind_vec] <- NA
+  MOT2_C[i,ind_vec] <- NA
+  MOT3_C[i,ind_vec] <- NA
+  PH1_C[i,ind_vec] <- NA
+  PH2_C[i,ind_vec] <- NA
+  PH3_C[i,ind_vec] <- NA
+  PH4_C[i,ind_vec] <- NA
+  INACT_C[i,ind_vec] <- NA
+  ACT_C[i,ind_vec] <- NA
+  REACT_C[i,ind_vec] <- NA
+  RET_C[i,ind_vec] <- NA
+  NEW_C[i,ind_vec] <- NA
+}
+
+stopCluster(cl)
+rm(list=c("zz","i","ii","cl","temp"))
+save.image()

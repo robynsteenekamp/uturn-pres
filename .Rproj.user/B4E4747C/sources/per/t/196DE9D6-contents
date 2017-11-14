@@ -2,7 +2,10 @@
 title: "Recommendations and Analytics to Uturn Ministries"
 author: "Robyn Steenekamp"
 date: "`r Sys.Date()`"
-output: github_document
+output:
+  prettydoc::html_pretty:
+    theme: architect
+    highlight: github
 ---
 
 
